@@ -1,6 +1,7 @@
 import cv2
 import mediapipe as mp
 from flask import Flask, Response
+import numpy as np
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -15,11 +16,28 @@ drawing_spec = mp_drawing.DrawingSpec(thickness=2, color=(0, 255, 0))
 
 # List of landmarks to outline
 OUTLINE_LANDMARKS = [
-    63, 68, 54, 103, 67, 
-    109, 10, 338, 297, 284, 298, 
-    293, 334, 296, 336, 
-    9, 107, 66, 105
+    105, 104, 103, 103, 67, 
+    109, 10, 338, 297, 332, 333, 
+    334, 296, 336, 
+    9, 107, 66
 ]
+
+# Adjustments for bounding box
+UPWARD_SHIFT = 10  # Pixels to shift the bounding box upward
+
+# Function to calculate the minimum rotated bounding box with upward shift only
+def get_rotated_bounding_box(points, upward_shift):
+    points = np.array(points, dtype=np.float32)
+
+    # Get the rotated rectangle that bounds the points
+    rect = cv2.minAreaRect(points)
+    box = cv2.boxPoints(rect)  # Get the four points of the rotated rectangle
+    box = np.int0(box)  # Convert points to integer
+
+    # Shift the box upward by adjusting the y-coordinates
+    box[:, 1] -= upward_shift
+
+    return box
 
 def generate_frames():
     cap = cv2.VideoCapture(0)
@@ -39,19 +57,24 @@ def generate_frames():
         if result.multi_face_landmarks:
             for face_landmarks in result.multi_face_landmarks:
                 h, w, _ = frame.shape
-
-                # Store landmark coordinates for the outline
                 outline_points = []
+
                 for idx in OUTLINE_LANDMARKS:
                     landmark = face_landmarks.landmark[idx]
                     x, y = int(landmark.x * w), int(landmark.y * h)
                     outline_points.append((x, y))
-                
-                # Draw the outline
-                for i in range(len(outline_points)):
-                    start_point = outline_points[i]
-                    end_point = outline_points[(i + 1) % len(outline_points)]  # Connect to the next point
-                    cv2.line(frame, start_point, end_point, (0, 255, 0), 2)  # Draw lines between points
+
+                # Draw the outline (polygon)
+                # for i in range(len(outline_points)):
+                    # start_point = outline_points[i]
+                    # end_point = outline_points[(i + 1) % len(outline_points)]  # Connect to the next point
+                    # cv2.line(frame, start_point, end_point, (0, 255, 0), 2)
+
+                # Get the rotated bounding box with upward shift
+                rotated_box = get_rotated_bounding_box(outline_points, UPWARD_SHIFT)
+
+                # Draw the rotated bounding box
+                cv2.polylines(frame, [rotated_box], isClosed=True, color=(255, 0, 0), thickness=2)  # Blue rotated bounding box
         
         # Encode the frame in JPEG format
         ret, buffer = cv2.imencode('.jpg', frame)
